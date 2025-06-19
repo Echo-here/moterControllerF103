@@ -18,11 +18,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
-#include <string.h>
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,6 +57,8 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t rx_data;          // UART로 수신할 1바이트
 uint32_t pwm_value = 0;   // PWM 듀티값 (0~999)
+volatile uint32_t current_pwm_value = 0;
+volatile uint32_t target_pwm_value = 0;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -68,16 +70,19 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     char tx_buffer[32];  // 송신할 문자열 버퍼
 
     if (rx_data >= '0' && rx_data <= '9') {
-      pwm_value = (rx_data - '0') * 100;
-      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pwm_value);
-
-      // 송신 문자열 구성 (예: "Duty: 500\r\n")
-      snprintf(tx_buffer, sizeof(tx_buffer), "Duty: %lu\r\n", pwm_value);
-      HAL_UART_Transmit(huart2, (uint8_t*)tx_buffer, strlen(tx_buffer), HAL_MAX_DELAY);
-    }
-
-    // 다시 수신 인터럽트 시작
-    HAL_UART_Receive_IT(huart2, &rx_data, 1);
+    	target_pwm_value = (rx_data - '0') * 4.9;
+    	snprintf(tx_buffer, sizeof(tx_buffer), "Target Duty set to: %lu\r\n", target_pwm_value);
+    	HAL_UART_Transmit(&huart2, (uint8_t*)tx_buffer, strlen(tx_buffer), HAL_MAX_DELAY);
+    } else if (rx_data == 'r') {
+    	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+    } else if (rx_data == 't') {
+    	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+    }else if (rx_data == 'd') {
+    	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+    }else if (rx_data == 's') {
+    	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
+     }
+    HAL_UART_Receive_IT(&huart2, &rx_data, 1);
   }
 }
 /* USER CODE END 0 */
@@ -122,6 +127,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (current_pwm_value < target_pwm_value) {
+		  current_pwm_value++;
+	  	  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, current_pwm_value);
+	  }
+	  else if (current_pwm_value > target_pwm_value) {
+	  	  current_pwm_value--;
+	  	  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, current_pwm_value);
+	  }
+	  HAL_Delay(5); // 딜레이를 줘서 천천히 변경 (5ms 조절 가능)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -141,12 +155,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI_DIV2;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -186,9 +201,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 83;
+  htim2.Init.Prescaler = 71;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 999;
+  htim2.Init.Period = 49;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
@@ -268,7 +283,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1|GPIO_PIN_4|LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -276,12 +291,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pins : PA1 PA4 LD2_Pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_4|LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
