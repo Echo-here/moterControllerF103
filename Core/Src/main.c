@@ -32,7 +32,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define PWM_DUTY_SCALE 4.9f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,34 +56,38 @@ static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t rx_data;          // UART로 수신할 1바이트
-uint32_t pwm_value = 0;   // PWM 듀티값 (0~999)
-volatile uint32_t current_pwm_value = 0;
-volatile uint32_t target_pwm_value = 0;
+volatile uint16_t current_pwm_value = 0;
+volatile uint16_t target_pwm_value = 0;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  if (huart->Instance == USART2)
-  {
-    char tx_buffer[32];  // 송신할 문자열 버퍼
 
-    if (rx_data >= '0' && rx_data <= '9') {
-    	target_pwm_value = (rx_data - '0') * 4.9;
-    	snprintf(tx_buffer, sizeof(tx_buffer), "Target Duty set to: %lu\r\n", target_pwm_value);
-    	HAL_UART_Transmit(&huart2, (uint8_t*)tx_buffer, strlen(tx_buffer), HAL_MAX_DELAY);
-    } else if (rx_data == 'r') {
-    	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
-    } else if (rx_data == 't') {
-    	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
-    }else if (rx_data == 'd') {
-    	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
-    }else if (rx_data == 's') {
-    	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
-     }
-    HAL_UART_Receive_IT(&huart2, &rx_data, 1);
-  }
+	if (huart->Instance == USART2)
+	{
+		if (rx_data >= '0' && rx_data <= '9') {
+			char tx_buffer[32];
+			target_pwm_value = (rx_data - '0') * PWM_DUTY_SCALE;
+			snprintf(tx_buffer, sizeof(tx_buffer), "Target Duty set to: %d\r\n", target_pwm_value);
+			HAL_UART_Transmit(&huart2, (uint8_t*)tx_buffer, strlen(tx_buffer), HAL_MAX_DELAY);
+		} else if (rx_data == 'r') {
+    		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+		} else if (rx_data == 't') {
+    		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+		}else if (rx_data == 'd') {
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+		}else if (rx_data == 's') {
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
+		}
+		HAL_UART_Receive_IT(&huart2, &rx_data, sizeof(rx_data));
+	}
+}
+void Transform_PWM(){
+	if (current_pwm_value < target_pwm_value) current_pwm_value++;
+	else if (current_pwm_value > target_pwm_value) current_pwm_value--;
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, current_pwm_value);
 }
 /* USER CODE END 0 */
 
@@ -120,21 +124,14 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);  // PWM 시작
-  HAL_UART_Receive_IT(&huart2, &rx_data, 1); // UART 수신 인터럽트 시작
+  HAL_UART_Receive_IT(&huart2, &rx_data, sizeof(rx_data)); // UART 수신 인터럽트 시작
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (current_pwm_value < target_pwm_value) {
-		  current_pwm_value++;
-	  	  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, current_pwm_value);
-	  }
-	  else if (current_pwm_value > target_pwm_value) {
-	  	  current_pwm_value--;
-	  	  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, current_pwm_value);
-	  }
+	  Transform_PWM();
 	  HAL_Delay(5); // 딜레이를 줘서 천천히 변경 (5ms 조절 가능)
     /* USER CODE END WHILE */
 
