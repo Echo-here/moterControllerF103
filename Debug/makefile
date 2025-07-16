@@ -60,8 +60,8 @@ all: main-build
 main-build: echo20250614-5.elf secondary-outputs
 
 # Tool invocations
-echo20250614-5.elf echo20250614-5.map: $(OBJS) $(USER_OBJS) /home/bitbyte08/Echo/firmware/echo20250614-5/STM32F103RBTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "echo20250614-5.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m3 -T"/home/bitbyte08/Echo/firmware/echo20250614-5/STM32F103RBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="echo20250614-5.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+echo20250614-5.elf echo20250614-5.map: $(OBJS) $(USER_OBJS) /Users/gongjaeug/STM32CubeIDE/workspace_1.18.0/echo20240614-5/STM32F103RBTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "echo20250614-5.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m3 -T"/Users/gongjaeug/STM32CubeIDE/workspace_1.18.0/echo20240614-5/STM32F103RBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="echo20250614-5.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
