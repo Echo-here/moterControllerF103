@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>     // atoi 함수 선언
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -63,6 +64,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM1_Init(void);
+static void Stop_Motor(void); // 정지 함수 선언
 /* USER CODE BEGIN PFP */
 volatile uint16_t current_pwm_value = 0;
 volatile uint16_t target_pwm_value = 0;
@@ -81,9 +83,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
     {
-        if (rx_data == '' || rx_data == '')
+    	if (rx_data == '\0')
         {
-            rx_buffer[rx_index] = ''; // Null-terminate the string
+    		rx_buffer[rx_index] = '\0'; // 문자열 끝 표시
 
             int speed = 0;
             char command = rx_buffer[0];
@@ -161,7 +163,7 @@ void Transform_PWM(){
 //  }
 //}
 
-
+//인터럽트 함수
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM1 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
@@ -174,6 +176,14 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
   }
 }
 
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_0)  // 네가 선택한 핀 번호
+    {
+        // 여기에 적외선 센서가 감지됐을 때 할 동작 작성
+    	Stop_Motor();  // 정지 함수 호출
+    }
+}
 
 
 /**
@@ -459,8 +469,8 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4|LD2_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : B1_Pin PC0 */
-  GPIO_InitStruct.Pin = B1_Pin|GPIO_PIN_0;
+  /*Configure GPIO pins : B1_Pin IR_Pin */
+  GPIO_InitStruct.Pin = B1_Pin|IR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
