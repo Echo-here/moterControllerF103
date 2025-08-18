@@ -66,8 +66,6 @@ static void MX_TIM2_Init(void);
 static void MX_TIM1_Init(void);
 static void Stop_Motor(void); // 정지 함수 선언
 /* USER CODE BEGIN PFP */
-volatile uint16_t current_pwm_value = 0;
-volatile uint16_t target_pwm_value = 0;
 volatile int32_t encoder_count = 0;  // 인코더 카운터
 volatile int32_t cycle = 18450;
 /* USER CODE END PFP */
@@ -83,39 +81,43 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
     {
-    	if (rx_data == '\0')
+        if (rx_data == '\n' || rx_data == '\r')
         {
-    		rx_buffer[rx_index] = '\0'; // 문자열 끝 표시
+            rx_buffer[rx_index] = '\0';
 
-            int speed = 0;
-            char command = rx_buffer[0];
-            if (rx_index > 1)
+            char motor = rx_buffer[0];   // 'l' or 'r'
+            char dir   = rx_buffer[2];   // 'f' or 'b'
+            int speed  = atoi(&rx_buffer[4]); // duty (0~9)
+
+            uint16_t duty = speed * PWM_DUTY_SCALE;
+
+            if (motor == 'l')  // Left Motor
             {
-                speed = atoi((char *)&rx_buffer[1]);
+                target_pwm_left = duty;
+                if (dir == 'f')
+                    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); // Forward
+                else if (dir == 'b')
+                    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // Backward
+            }
+            else if (motor == 'r') // Right Motor
+            {
+                target_pwm_right = duty;
+                if (dir == 'f')
+                    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // Forward
+                else if (dir == 'b')
+                    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);   // Backward
             }
 
-            if (command == 'l')
-            {
-                target_pwm_left = speed * PWM_DUTY_SCALE;
-            }
-            else if (command == 'r')
-            {
-                target_pwm_right = speed * PWM_DUTY_SCALE;
-            }
-
-            // Clear buffer
+            // buffer clear
             rx_index = 0;
             memset(rx_buffer, 0, sizeof(rx_buffer));
         }
         else
         {
             if (rx_index < sizeof(rx_buffer) - 1)
-            {
                 rx_buffer[rx_index++] = rx_data;
-            }
         }
 
-        // 다시 1바이트 수신을 위해 인터럽트 활성화
         HAL_UART_Receive_IT(&huart2, &rx_data, 1);
     }
 }
