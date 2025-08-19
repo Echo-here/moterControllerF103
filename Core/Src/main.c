@@ -42,7 +42,6 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart2;
@@ -63,8 +62,6 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
-static void MX_TIM1_Init(void);
-static void Stop_Motor(void); // 정지 함수 선언
 /* USER CODE BEGIN PFP */
 volatile int32_t encoder_count = 0;  // 인코더 카운터
 volatile int32_t cycle = 18450;
@@ -85,30 +82,47 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         {
             rx_buffer[rx_index] = '\0';
 
-            char motor = rx_buffer[0];   // 'l' or 'r'
-            char dir   = rx_buffer[2];   // 'f' or 'b'
-            int speed  = atoi(&rx_buffer[4]); // duty (0~9)
-
-            uint16_t duty = speed * PWM_DUTY_SCALE;
-
-            if (motor == 'l')  // Left Motor
+            // --- 단일 명령 (예: "s") ---
+            if (rx_index == 1 && rx_buffer[0] == 's')
             {
-                target_pwm_left = duty;
-                if (dir == 'f')
-                    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); // Forward
-                else if (dir == 'b')
-                    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // Backward
+                Stop_Motor();
+                HAL_UART_Transmit(&huart2,
+                    (uint8_t*)"Stop CMD received\r\n", 19, HAL_MAX_DELAY);
             }
-            else if (motor == 'r') // Right Motor
+            // --- 일반 모터 명령 (예: "l f 3") ---
+            else if (rx_index >= 5)
             {
-                target_pwm_right = duty;
-                if (dir == 'f')
-                    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // Forward
-                else if (dir == 'b')
-                    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);   // Backward
+                char motor = rx_buffer[0];   // 'l' or 'r'
+                char dir   = rx_buffer[2];   // 'f' or 'b'
+                int speed  = atoi(&rx_buffer[4]); // duty (0~9)
+
+                if ((motor == 'l' || motor == 'r') &&
+                    (dir == 'f' || dir == 'b') &&
+                    (speed >= 0 && speed <= 9))
+                {
+                    uint16_t duty = speed * PWM_DUTY_SCALE;
+
+                    if (motor == 'l')  // Left Motor
+                    {
+                        target_pwm_left = duty;
+                        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0,
+                            (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+                    }
+                    else if (motor == 'r') // Right Motor
+                    {
+                        target_pwm_right = duty;
+                        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1,
+                            (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+                    }
+                }
+                else
+                {
+                    HAL_UART_Transmit(&huart2,
+                        (uint8_t*)"Invalid CMD\r\n", 13, HAL_MAX_DELAY);
+                }
             }
 
-            // buffer clear
+            // 버퍼 초기화
             rx_index = 0;
             memset(rx_buffer, 0, sizeof(rx_buffer));
         }
@@ -121,6 +135,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         HAL_UART_Receive_IT(&huart2, &rx_data, 1);
     }
 }
+
 /**
   * @brief  목표 PWM 값에 도달할 때까지 현재 PWM 값을 점진적으로 변경
   * @retval None
@@ -166,17 +181,17 @@ void Transform_PWM(){
 //}
 
 //인터럽트 함수
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
-{
-  if (htim->Instance == TIM1 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
-  {
-	  encoder_count++;  // A상 rising마다 증가
-	  if(encoder_count>=cycle){
-	      	Stop_Motor();  // 정지 함수 호출
-
-	      }
-  }
-}
+//void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+//{
+//  if (htim->Instance == TIM2 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+//  {
+//	  encoder_count++;  // A상 rising마다 증가
+//	  if(encoder_count>=cycle){
+//	      	Stop_Motor();  // 정지 함수 호출
+//
+//	      }
+//  }
+//}
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
@@ -195,8 +210,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void Stop_Motor(void)
 {
   // 양쪽 모터의 PWM을 0으로 설정하여 정지
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
+	target_pwm_right = 0;
+	target_pwm_left = 0;
 
   // 필요 시 후속 처리 (예: 방향핀 LOW, 브레이크)
 }
@@ -233,7 +248,6 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
-  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   // 왼쪽, 오른쪽 모터 PWM 채널 시작
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);  // Left Motor PWM
@@ -301,71 +315,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief TIM1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM1_Init(void)
-{
-
-  /* USER CODE BEGIN TIM1_Init 0 */
-
-  /* USER CODE END TIM1_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
-
-  /* USER CODE BEGIN TIM1_Init 1 */
-
-  /* USER CODE END TIM1_Init 1 */
-  htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 71;
-  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 49;
-  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
-  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
-  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
-  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
-  sBreakDeadTimeConfig.DeadTime = 0;
-  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
-  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
-  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
-  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM1_Init 2 */
-
-  /* USER CODE END TIM1_Init 2 */
-  HAL_TIM_MspPostInit(&htim1);
-
 }
 
 /**
@@ -471,6 +420,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4|LD2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, moter_right_dir_Pin|moter_left_dir_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pins : B1_Pin IR_Pin */
   GPIO_InitStruct.Pin = B1_Pin|IR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
@@ -483,6 +435,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : moter_right_dir_Pin moter_left_dir_Pin */
+  GPIO_InitStruct.Pin = moter_right_dir_Pin|moter_left_dir_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
