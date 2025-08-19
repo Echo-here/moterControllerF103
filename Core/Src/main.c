@@ -62,6 +62,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
+static void Stop_Motor(void);
 /* USER CODE BEGIN PFP */
 volatile int32_t encoder_count = 0;  // 인코더 카운터
 volatile int32_t cycle = 18450;
