@@ -42,6 +42,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart2;
@@ -62,7 +64,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
-static void Stop_Motor(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 volatile int32_t encoder_count = 0;  // 인코더 카운터
 volatile int32_t cycle = 18450;
@@ -70,6 +72,14 @@ volatile int32_t cycle = 18450;
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+int __io_putchar(int ch) {
+  HAL_UART_Transmit(&huart2, (uint8_t*) &ch, 1, 1000);
+  if (ch == '\n')
+    HAL_UART_Transmit(&huart2, (uint8_t*) "\r", 1, 1000);
+  return ch;
+}
+
 /**
   * @brief  UART 수신 완료 시 호출되는 콜백 함수
   * @param  huart: UART 핸들
@@ -106,15 +116,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                     if (motor == 'l')  // Left Motor
                     {
                         target_pwm_left = duty;
-                        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0,
+                        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8,
                             (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+
                     }
                     else if (motor == 'r') // Right Motor
                     {
                         target_pwm_right = duty;
-                        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1,
+                        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10,
                             (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
                     }
+                    HAL_UART_Transmit(&huart2,(uint8_t*)"debug\r\n", 7, HAL_MAX_DELAY);
                 }
                 else
                 {
@@ -194,15 +206,6 @@ void Transform_PWM(){
 //  }
 //}
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    if (GPIO_Pin == GPIO_PIN_0)  // 네가 선택한 핀 번호
-    {
-        // 여기에 적외선 센서가 감지됐을 때 할 동작 작성
-    	Stop_Motor();  // 정지 함수 호출
-    }
-}
-
 
 /**
   * @brief  모든 모터를 즉시 정지
@@ -215,6 +218,19 @@ void Stop_Motor(void)
 	target_pwm_left = 0;
 
   // 필요 시 후속 처리 (예: 방향핀 LOW, 브레이크)
+}
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+    if (hadc->Instance == ADC1)
+    {
+        uint32_t irValue = HAL_ADC_GetValue(hadc);
+
+        // 거리값 기준 제어
+        if (irValue > 3000)  // 가까이 물체 있음
+        {
+            Stop_Motor();
+        }
+    }
 }
 /* USER CODE END 0 */
 
@@ -249,6 +265,7 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   // 왼쪽, 오른쪽 모터 PWM 채널 시작
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);  // Left Motor PWM
@@ -256,21 +273,29 @@ int main(void)
 
   // UART 수신 인터럽트 시작 (1바이트씩 수신)
   HAL_UART_Receive_IT(&huart2, &rx_data, 1); // UART Receive 1 byte
-
+  HAL_ADC_Start_IT(&hadc1);
   // 엔코더 입력을 위한 타이머 입력 캡처 시작
-  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 
   // 초기 PWM 값을 0으로 설정
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
+
+  HAL_ADCEx_Calibration_Start(&hadc1);
+    HAL_ADC_Start(&hadc1);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if(HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+	        int adc_value = HAL_ADC_GetValue(&hadc1);
+	        printf("ADC_VALUE = %d\n\n", adc_value);
+	  }
+
 	  Transform_PWM();
-	  HAL_Delay(5); // 딜레이를 줘서 천천히 변경 (5ms 조절 가능)
+	  HAL_Delay(10); // 딜레이를 줘서 천천히 변경 (5ms 조절 가능)
 
     /* USER CODE END WHILE */
 
@@ -287,6 +312,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -316,6 +342,59 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -356,6 +435,10 @@ static void MX_TIM2_Init(void)
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
@@ -419,10 +502,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4|LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4|LD2_Pin|moter_left_dir_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, moter_right_dir_Pin|moter_left_dir_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(moter_right_dir_GPIO_Port, moter_right_dir_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : B1_Pin IR_Pin */
   GPIO_InitStruct.Pin = B1_Pin|IR_Pin;
@@ -430,19 +513,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PA4 LD2_Pin */
-  GPIO_InitStruct.Pin = GPIO_PIN_4|LD2_Pin;
+  /*Configure GPIO pins : PA4 LD2_Pin moter_left_dir_Pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_4|LD2_Pin|moter_left_dir_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : moter_right_dir_Pin moter_left_dir_Pin */
-  GPIO_InitStruct.Pin = moter_right_dir_Pin|moter_left_dir_Pin;
+  /*Configure GPIO pin : moter_right_dir_Pin */
+  GPIO_InitStruct.Pin = moter_right_dir_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(moter_right_dir_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
