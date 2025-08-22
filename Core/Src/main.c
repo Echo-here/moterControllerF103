@@ -176,12 +176,6 @@ void Transform_PWM(){
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, current_pwm_left);
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, current_pwm_right);
 }
-
-//void EXTI0_IRQHandler(void)
-//{
-//  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);  // 콜백 함수 호출
-//}
-
 //void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 //{
 //  if (GPIO_Pin == GPIO_PIN_0)
@@ -227,7 +221,10 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
     if(hadc->Instance == ADC1)
     {
         uint32_t adc_value = HAL_ADC_GetValue(hadc);
-        printf("ADC = %lu\n", adc_value);
+//        printf("ADC = %lu\n", adc_value);
+        if(adc_value < 4095){
+        	Stop_Motor();
+        }
     }
 }
 /* USER CODE END 0 */
