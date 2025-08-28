@@ -62,9 +62,6 @@ void Error_Handler(void);
 #define B1_Pin GPIO_PIN_13
 #define B1_GPIO_Port GPIOC
 #define B1_EXTI_IRQn EXTI15_10_IRQn
-#define IR_Pin GPIO_PIN_0
-#define IR_GPIO_Port GPIOC
-#define IR_EXTI_IRQn EXTI0_IRQn
 #define moter_left_Pin GPIO_PIN_0
 #define moter_left_GPIO_Port GPIOA
 #define moter_right_Pin GPIO_PIN_1
