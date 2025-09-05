@@ -131,6 +131,74 @@ int __io_putchar(int ch) {
   * @param  huart: UART 핸들
   * @retval None
   */
+//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+//{
+//    if (huart->Instance == USART2)
+//    {
+//        if (rx_data == '\n' || rx_data == '\r')
+//        {
+//            rx_buffer[rx_index] = '\0';
+//
+//            // --- 단일 명령 (예: "s") ---
+//            if (rx_index == 1 && rx_buffer[0] == 's')
+//            {
+//                Stop_Motor();
+//                printf("stop CMD received");
+//            }
+//            else if (rx_index == 1 && rx_buffer[0] == 'e')
+//            {
+//                set_brake(true);
+//                printf("brake CMD received");
+//            }
+//            // --- 일반 모터 명령 (예: "l f 3") ---
+//            else if (rx_index >= 5)
+//            {
+//                set_brake(false);
+//                char motor = rx_buffer[0];   // 'l' or 'r'
+//                char dir   = rx_buffer[2];   // 'f' or 'b'
+//                int speed  = atoi(&rx_buffer[4]); // duty (0~9)
+//
+//                if ((motor == 'l' || motor == 'r') &&
+//                    (dir == 'f' || dir == 'b') &&
+//                    (speed >= 0 && speed <= 9))
+//                {
+//                    uint16_t duty = speed * PWM_DUTY_SCALE;
+//
+//                    if (motor == 'l')  // Left Motor
+//                    {
+//                    	left_motor.target= duty;
+//                        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11,
+//                            (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+//
+//                    }
+//                    else if (motor == 'r') // Right Motor
+//                    {
+//                       right_motor.target = duty;
+//                        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10,
+//                            (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+//                    }
+//                }
+//                else
+//              {
+//                    HAL_UART_Transmit(&huart2,
+//                        (uint8_t*)"Invalid CMD\r\n", 13, HAL_MAX_DELAY);
+//                }
+//            }
+//
+//            // 버퍼 초기화
+//            rx_index = 0;
+//            memset(rx_buffer, 0, sizeof(rx_buffer));
+//        }
+//        else
+//        {
+//            if (rx_index < sizeof(rx_buffer) - 1)
+//                rx_buffer[rx_index++] = rx_data;
+//        }
+//
+//        HAL_UART_Receive_IT(&huart2, &rx_data, 1);
+//    }
+//}
+// ------------------- UART 콜백 -------------------
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
@@ -138,54 +206,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         if (rx_data == '\n' || rx_data == '\r')
         {
             rx_buffer[rx_index] = '\0';
-
-            // --- 단일 명령 (예: "s") ---
-            if (rx_index == 1 && rx_buffer[0] == 's')
-            {
-                Stop_Motor();
-                printf("stop CMD received");
-            }
-            else if (rx_index == 1 && rx_buffer[0] == 'e')
-            {
-                set_brake(true);
-                printf("brake CMD received");
-            }
-            // --- 일반 모터 명령 (예: "l f 3") ---
-            else if (rx_index >= 5)
-            {
-                set_brake(false);
-                char motor = rx_buffer[0];   // 'l' or 'r'
-                char dir   = rx_buffer[2];   // 'f' or 'b'
-                int speed  = atoi(&rx_buffer[4]); // duty (0~9)
-
-                if ((motor == 'l' || motor == 'r') &&
-                    (dir == 'f' || dir == 'b') &&
-                    (speed >= 0 && speed <= 9))
-                {
-                    uint16_t duty = speed * PWM_DUTY_SCALE;
-
-                    if (motor == 'l')  // Left Motor
-                    {
-                    	left_motor.target= duty;
-                        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11,
-                            (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-
-                    }
-                    else if (motor == 'r') // Right Motor
-                    {
-                       right_motor.target = duty;
-                        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10,
-                            (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-                    }
-                }
-                else
-              {
-                    HAL_UART_Transmit(&huart2,
-                        (uint8_t*)"Invalid CMD\r\n", 13, HAL_MAX_DELAY);
-                }
-            }
-
-            // 버퍼 초기화
+            parse_command((char*)rx_buffer);   // 파싱 전담 함수 호출
             rx_index = 0;
             memset(rx_buffer, 0, sizeof(rx_buffer));
         }
@@ -198,6 +219,73 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         HAL_UART_Receive_IT(&huart2, &rx_data, 1);
     }
 }
+// ------------------- 명령 파싱 함수 -------------------
+void parse_command(char *cmd)
+{
+    if (strlen(cmd) == 1)
+    {
+        if (cmd[0] == 's')
+        {
+            Stop_Motor();
+            printf("Stop command received\n");
+        }
+        else if (cmd[0] == 'e')
+        {
+            set_brake(true);
+            printf("Brake command received\n");
+        }
+        else
+        {
+            printf("Unknown single command: %s\n", cmd);
+        }
+    }
+    else if (strlen(cmd) >= 5)
+    {
+        char motor = cmd[0];   // 'l' or 'r'
+        char dir   = cmd[2];   // 'f' or 'b'
+        int  speed = atoi(&cmd[4]);
+
+        if ((motor == 'l' || motor == 'r') &&
+            (dir == 'f' || dir == 'b') &&
+            (speed >= 0 && speed <= 9))
+        {
+            set_brake(false);
+            execute_command(motor, dir, speed);
+        }
+        else
+        {
+            printf("Invalid command: %s\n", cmd);
+        }
+    }
+    else
+    {
+        printf("Unknown command format: %s\n", cmd);
+    }
+}
+// ------------------- 명령 실행 함수 -------------------
+void execute_command(char motor, char dir, int speed)
+{
+    uint16_t duty = speed * PWM_DUTY_SCALE;
+
+    if (motor == 'l')  // Left Motor
+    {
+        left_motor.target = duty;
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11,
+                          (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    }
+    else if (motor == 'r') // Right Motor
+    {
+        right_motor.target = duty;
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10,
+                          (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    }
+
+    printf("CMD -> Motor:%c Dir:%c Speed:%d (duty=%d)\n",
+           motor, dir, speed, duty);
+}
+
+
+
 
 //점진적 모터 속도 제어
 void Transform_PWM(){
