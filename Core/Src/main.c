@@ -21,9 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>     // atoi 함수 선언
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,25 +37,7 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-//엔코더 구조체
-typedef struct {
-    TIM_HandleTypeDef *htim;
-    int32_t total;
-} Encoder_t;
 
-//모터 구조
-typedef struct {
-	TIM_HandleTypeDef *htim;
-	uint32_t channel;
-    uint16_t target;
-    uint16_t current;
-    GPIO_TypeDef *dir_port;    // 방향 제어 포트
-    uint16_t dir_pin;          // 방향 제어 핀
-    GPIO_TypeDef *brk_port;    // 브레이크 포트
-    uint16_t brk_pin;          // 브레이크 핀
-
-
-} Motor_t;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -80,7 +60,7 @@ Encoder_t encoder4 = { .htim = &htim4, .total = 0 };
 
 Motor_t left_motor = {
     .htim = &htim2,
-    .pwm_channel = TIM_CHANNEL_1,
+    .channel = TIM_CHANNEL_1,
     .dir_port = GPIOB,
     .dir_pin = GPIO_PIN_11,
     .brk_port = GPIOB,
@@ -91,7 +71,7 @@ Motor_t left_motor = {
 
 Motor_t right_motor = {
     .htim = &htim2,
-    .pwm_channel = TIM_CHANNEL_2,
+    .channel = TIM_CHANNEL_2,
     .dir_port = GPIOB,
     .dir_pin = GPIO_PIN_10,
     .brk_port = GPIOB,
@@ -113,6 +93,7 @@ static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 volatile int32_t encoder_count = 0;  // 인코더 카운터
 volatile int32_t cycle = 18450;
+int32_t test = 0;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -121,8 +102,8 @@ volatile int32_t cycle = 18450;
 //printf로 uart 출력
 int __io_putchar(int ch) {
   HAL_UART_Transmit(&huart2, (uint8_t*) &ch, 1, 1000);
-  if (ch == '\n')
-    HAL_UART_Transmit(&huart2, (uint8_t*) "\r", 1, 1000);
+  if (ch == '\r')
+    HAL_UART_Transmit(&huart2, (uint8_t*) "\n", 1, 1000);
   return ch;
 }
 
@@ -203,9 +184,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
     {
+
         if (rx_data == '\n' || rx_data == '\r')
         {
             rx_buffer[rx_index] = '\0';
+
             parse_command((char*)rx_buffer);   // 파싱 전담 함수 호출
             rx_index = 0;
             memset(rx_buffer, 0, sizeof(rx_buffer));
@@ -238,6 +221,8 @@ void parse_command(char *cmd)
         {
             printf("Unknown single command: %s\n", cmd);
         }
+        Encoder_Reset(&encoder1);
+        Encoder_Reset(&encoder4);
     }
     else if (strlen(cmd) >= 5)
     {
@@ -272,12 +257,14 @@ void execute_command(char motor, char dir, int speed)
         left_motor.target = duty;
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11,
                           (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+        printf("%ld", Encoder_GetPosition(&encoder1));
     }
     else if (motor == 'r') // Right Motor
     {
         right_motor.target = duty;
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10,
                           (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+        printf("%ld", Encoder_GetPosition(&encoder4));
     }
 
     printf("CMD -> Motor:%c Dir:%c Speed:%d (duty=%d)\n",
@@ -285,12 +272,10 @@ void execute_command(char motor, char dir, int speed)
 }
 
 
-
-
 //점진적 모터 속도 제어
 void Transform_PWM(){
 	Motor_UpdatePWM(&left_motor);
-	Motor_UpdatePWM(&right_moter);
+	Motor_UpdatePWM(&right_motor);
 }
 
 void Motor_UpdatePWM(Motor_t *motor) {
@@ -299,7 +284,7 @@ void Motor_UpdatePWM(Motor_t *motor) {
     __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, motor->current);
 }
 
-//점진적 모터 정
+//점진적 모터 정지
 void Stop_Motor(void)
 {
   // 양쪽 모터의 PWM을 0으로 설정하여 정지
@@ -313,6 +298,11 @@ void set_brake(bool on) {
     if(on) {
     	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
     	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
+    	left_motor.target = 0;
+    	right_motor.target = 0;
+    	left_motor.current = 0;
+    	right_motor.current = 0;
+
     }
     else {
     	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
@@ -345,17 +335,22 @@ void TIM1_IRQHandler(void)
 // HAL 콜백 함수 (Update Event 등 처리)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+	if(htim->Instance == TIM3)  // TIM3 = 1ms 주기 타이머
+		{
+	        Transform_PWM();   // 모터 점진 제어
+	}else if(htim->Instance == TIM1 || htim->Instance == TIM4){
     volatile int32_t *encoder_total = NULL;
 
-    if(htim->Instance == TIM1) encoder_total = &encoder_total_left;
-    else if(htim->Instance == TIM4) encoder_total = &encoder_total_right;
+    if(htim->Instance == TIM1) encoder_total = &encoder1.total;
+    else if(htim->Instance == TIM4) encoder_total = &encoder4.total;
     else return;
 
     if(__HAL_TIM_IS_TIM_COUNTING_DOWN(htim)) *encoder_total -= 0x10000;
     else *encoder_total += 0x10000;
+	}
 }
 
-//엔코더 값 가져오
+//엔코더 값 가져오기
 int32_t Encoder_GetPosition(Encoder_t *encoder)
 {
     return (int32_t)__HAL_TIM_GET_COUNTER(encoder->htim) + encoder->total;
@@ -366,15 +361,6 @@ void Encoder_Reset(Encoder_t *encoder)
 {
     __HAL_TIM_SET_COUNTER(encoder->htim, 0);
     encoder->total = 0;  // 누적값도 같이 리셋해주면 안전함
-}
-
-// 타이머 콜백
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-    if(htim->Instance == TIM3)  // TIM3 = 1ms 주기 타이머
-    {
-        Transform_PWM();   // 모터 점진 제어
-    }
 }
 
 /* USER CODE END 0 */
@@ -442,7 +428,9 @@ int main(void)
   {
 
     /* USER CODE END WHILE */
-
+	  Transform_PWM();
+	  test = __HAL_TIM_GET_COUNTER(encoder1.htim);
+	  HAL_Delay(50);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
