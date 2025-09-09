@@ -101,10 +101,12 @@ int32_t test = 0;
 
 //printf로 uart 출력
 int __io_putchar(int ch) {
-  HAL_UART_Transmit(&huart2, (uint8_t*) &ch, 1, 1000);
-  if (ch == '\r')
-    HAL_UART_Transmit(&huart2, (uint8_t*) "\n", 1, 1000);
-  return ch;
+    HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, 1000);
+    if (ch == '\n') {
+        uint8_t cr = '\r';
+        HAL_UART_Transmit(&huart2, &cr, 1, 1000);
+    }
+    return ch;
 }
 
 /**
@@ -353,7 +355,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //엔코더 값 가져오기
 int32_t Encoder_GetPosition(Encoder_t *encoder)
 {
-    return (int32_t)__HAL_TIM_GET_COUNTER(encoder->htim) + encoder->total;
+    return (int32_t)__HAL_TIM_GET_COUNTER(encoder->htim);
 }
 
 // 카운터 값 리셋
@@ -404,6 +406,8 @@ int main(void)
   // 왼쪽, 오른쪽 모터 PWM 채널 시작
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);  // Left Motor PWM
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);  // Right Motor PWM
+  HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
+  HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
 
   // UART 수신 인터럽트 시작 (1바이트씩 수신)
   HAL_UART_Receive_IT(&huart2, &rx_data, 1); // UART Receive 1 byte
@@ -429,7 +433,6 @@ int main(void)
 
     /* USER CODE END WHILE */
 	  Transform_PWM();
-	  test = __HAL_TIM_GET_COUNTER(encoder1.htim);
 	  HAL_Delay(50);
     /* USER CODE BEGIN 3 */
   }
