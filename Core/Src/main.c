@@ -433,7 +433,12 @@ int main(void)
 
     /* USER CODE END WHILE */
 	  Transform_PWM();
-	  HAL_Delay(50);
+	  test = (int32_t)__HAL_TIM_GET_COUNTER(encoder1.htim);
+	  if(test >= 32700){
+		  set_brake(true);
+		  __HAL_TIM_SET_COUNTER(encoder1.htim, 0);
+	  }
+//	  HAL_Delay(50);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
