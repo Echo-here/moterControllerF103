@@ -92,10 +92,6 @@ static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
-volatile int32_t encoder_count = 0;  // 인코더 카운터
-volatile int32_t cycle = 32700;
-int32_t test = 0;
-long encoder_test = 0;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -255,6 +251,16 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
         }
     }
 }
+void stack_encoder(Encoder_t *encoder){
+	 uint16_t curr_cnt = (uint16_t)__HAL_TIM_GET_COUNTER(encoder->htim);
+
+	 // 16비트 카운터 wrap 처리
+	 int32_t delta = (int32_t)((int16_t)(curr_cnt - encoder->prev_cnt));
+	 encoder->prev_cnt = curr_cnt;
+	 // 무한 누적
+	 encoder->total_count += delta;
+
+}
 
 // TIM4,1 인터럽트 핸들러
 void TIM4_IRQHandler(void)
@@ -272,44 +278,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim->Instance == TIM3)  // TIM3 = 1ms 주기 타이머
 		{
 	        Transform_PWM();   // 모터 점진 제어
-
+	        stack_encoder(&encoder1);
+	        stack_encoder(&encoder4);
 	}
-}
-
-//엔코더 값 가져오기
-int32_t Encoder_GetPosition(Encoder_t *encoder)
-{
-    return (int32_t)__HAL_TIM_GET_COUNTER(encoder->htim);
-}
-
-// 카운터 값 리셋
-void Encoder_Reset(Encoder_t *encoder)
-{
-    __HAL_TIM_SET_COUNTER(encoder->htim, 0);
-    encoder->total_count = 0;  // 누적값도 같이 리셋해주면 안전함
-}
-
-// CRC16-CCITT (0x1021) - 기본 구현
-static uint16_t crc16_ccitt(const uint8_t *data, uint32_t len)
-{
-    uint16_t crc = 0xFFFF; // 또는 0x0000, 시스템에 맞게 선택
-    for (uint32_t i = 0; i < len; ++i) {
-        crc ^= ((uint16_t)data[i]) << 8;
-        for (int j = 0; j < 8; ++j) {
-            if (crc & 0x8000) crc = (crc << 1) ^ 0x1021;
-            else crc <<= 1;
-        }
-    }
-    return crc;
-}
-
-// 안전한 delta 계산 (16-bit timer)
-static int32_t calc_delta_uint16(uint16_t prev, uint16_t curr)
-{
-    int32_t diff = (int32_t)curr - (int32_t)prev;
-    if (diff > 32767) diff -= 65536;
-    else if (diff < -32768) diff += 65536;
-    return diff;
 }
 
 // 패킷 생성 및 전송 (비동기 DMA 사용 예)
@@ -328,9 +299,9 @@ void send_total_count_via_uart(int64_t total)
     }
 
     // CRC over bytes [0..9]
-    uint16_t crc = crc16_ccitt(tx_buf, 10);
-    tx_buf[10] = (uint8_t)(crc & 0xFF);
-    tx_buf[11] = (uint8_t)((crc >> 8) & 0xFF);
+//    uint16_t crc = crc16_ccitt(tx_buf, 10);
+//    tx_buf[10] = (uint8_t)(crc & 0xFF);
+//    tx_buf[11] = (uint8_t)((crc >> 8) & 0xFF);
 
     // 그냥 blocking 방식 전송
     int len = sprintf((char*)tx_buf, "total=%lld\r\n", (long long)total);
@@ -346,32 +317,16 @@ void send_total_count_debug(int32_t revolutions, int32_t remainder) {
 // 주기적으로(또는 이벤트 기반으로) 호출되는 함수: counter 읽고 누적 및 전송 결정
 void encoder_process_once(Encoder_t *encoder)
 {
-    // 현재 CNT 값 읽기 (16-bit)
-    uint16_t curr = (uint16_t)__HAL_TIM_GET_COUNTER(encoder->htim);;
 
-    // 최초 실행 시 prev 초기화
-    static uint8_t inited = 0;
-    if (!inited) {
-        encoder->prev_cnt = curr;
-        inited = 1;
-        return;
-    }
-
-    // delta 계산
-    int32_t delta = calc_delta_uint16(encoder->prev_cnt, curr);
-    encoder->prev_cnt = curr;
-
-    // 누적
-    encoder->total_count += (int64_t)delta;
     int32_t revolutions = encoder->total_count / PPR;   // 정수 회전수
 //    double angle_deg = revolutions * 360.0;
     int32_t remainder = encoder->total_count % PPR;    // 남은 펄스 수
     // 전송 조건: 예) 값이 바뀔 때만 전송하거나, 주기적으로 전송
     // 여기서는 값이 바뀔 때 전송
-    if (delta != 0) {
     	send_total_count_debug(revolutions, revolutions);
-    }
 }
+
+
 
 /* USER CODE END 0 */
 
