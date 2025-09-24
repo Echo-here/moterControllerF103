@@ -41,7 +41,8 @@ extern "C" {
 /* USER CODE BEGIN ET */
 typedef struct {
     TIM_HandleTypeDef *htim;
-    int32_t total;
+    uint16_t prev_cnt;
+    int64_t total_count;
 } Encoder_t;
 
 //모터 구조
@@ -113,6 +114,8 @@ int32_t Encoder_GetPosition(Encoder_t *encoder);
 
 // 카운터 값 리셋
 void Encoder_Reset(Encoder_t *encoder);
+
+void encoder_process_once(Encoder_t *encoder);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
@@ -137,12 +140,6 @@ void Encoder_Reset(Encoder_t *encoder);
 #define left_encoder_A_GPIO_Port GPIOA
 #define left_encoder_B_Pin GPIO_PIN_9
 #define left_encoder_B_GPIO_Port GPIOA
-#define TMS_Pin GPIO_PIN_13
-#define TMS_GPIO_Port GPIOA
-#define TCK_Pin GPIO_PIN_14
-#define TCK_GPIO_Port GPIOA
-#define SWO_Pin GPIO_PIN_3
-#define SWO_GPIO_Port GPIOB
 #define right_encoder_A_Pin GPIO_PIN_6
 #define right_encoder_A_GPIO_Port GPIOB
 #define right_encoder_B_Pin GPIO_PIN_7

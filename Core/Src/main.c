@@ -33,6 +33,7 @@
 /* USER CODE BEGIN PD */
 #define PWM_DUTY_SCALE 4.9f
 #define IR_THRESHOLD 4000
+#define PPR 32700
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,8 +56,8 @@ uint8_t rx_buffer[20]; // UART 수신 데이터를 임시 저장할 버퍼
 uint8_t rx_index = 0;    // 수신 버퍼의 현재 위치
 uint8_t rx_data;         // UART로 수신한 1바이트 데이터
 
-Encoder_t encoder1 = { .htim = &htim1, .total = 0 };
-Encoder_t encoder4 = { .htim = &htim4, .total = 0 };
+Encoder_t encoder1 = { .htim = &htim1, .prev_cnt = 0, .total_count = 0 };
+Encoder_t encoder4 = { .htim = &htim4, .prev_cnt = 0, .total_count = 0 };
 
 Motor_t left_motor = {
     .htim = &htim2,
@@ -92,8 +93,9 @@ static void MX_TIM4_Init(void);
 static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 volatile int32_t encoder_count = 0;  // 인코더 카운터
-volatile int32_t cycle = 18450;
+volatile int32_t cycle = 32700;
 int32_t test = 0;
+long encoder_test = 0;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -109,78 +111,6 @@ int __io_putchar(int ch) {
     return ch;
 }
 
-/**
-  * @brief  UART 수신 완료 시 호출되는 콜백 함수
-  * @param  huart: UART 핸들
-  * @retval None
-  */
-//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-//{
-//    if (huart->Instance == USART2)
-//    {
-//        if (rx_data == '\n' || rx_data == '\r')
-//        {
-//            rx_buffer[rx_index] = '\0';
-//
-//            // --- 단일 명령 (예: "s") ---
-//            if (rx_index == 1 && rx_buffer[0] == 's')
-//            {
-//                Stop_Motor();
-//                printf("stop CMD received");
-//            }
-//            else if (rx_index == 1 && rx_buffer[0] == 'e')
-//            {
-//                set_brake(true);
-//                printf("brake CMD received");
-//            }
-//            // --- 일반 모터 명령 (예: "l f 3") ---
-//            else if (rx_index >= 5)
-//            {
-//                set_brake(false);
-//                char motor = rx_buffer[0];   // 'l' or 'r'
-//                char dir   = rx_buffer[2];   // 'f' or 'b'
-//                int speed  = atoi(&rx_buffer[4]); // duty (0~9)
-//
-//                if ((motor == 'l' || motor == 'r') &&
-//                    (dir == 'f' || dir == 'b') &&
-//                    (speed >= 0 && speed <= 9))
-//                {
-//                    uint16_t duty = speed * PWM_DUTY_SCALE;
-//
-//                    if (motor == 'l')  // Left Motor
-//                    {
-//                    	left_motor.target= duty;
-//                        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11,
-//                            (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-//
-//                    }
-//                    else if (motor == 'r') // Right Motor
-//                    {
-//                       right_motor.target = duty;
-//                        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10,
-//                            (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-//                    }
-//                }
-//                else
-//              {
-//                    HAL_UART_Transmit(&huart2,
-//                        (uint8_t*)"Invalid CMD\r\n", 13, HAL_MAX_DELAY);
-//                }
-//            }
-//
-//            // 버퍼 초기화
-//            rx_index = 0;
-//            memset(rx_buffer, 0, sizeof(rx_buffer));
-//        }
-//        else
-//        {
-//            if (rx_index < sizeof(rx_buffer) - 1)
-//                rx_buffer[rx_index++] = rx_data;
-//        }
-//
-//        HAL_UART_Receive_IT(&huart2, &rx_data, 1);
-//    }
-//}
 // ------------------- UART 콜백 -------------------
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -204,6 +134,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         HAL_UART_Receive_IT(&huart2, &rx_data, 1);
     }
 }
+
 // ------------------- 명령 파싱 함수 -------------------
 void parse_command(char *cmd)
 {
@@ -218,13 +149,15 @@ void parse_command(char *cmd)
         {
             set_brake(true);
             printf("Brake command received\n");
+        }else if(cmd[0] == 'q'){
+        	printf("encoder command received\n");
+	        encoder_process_once(&encoder1);
+	        encoder_process_once(&encoder4);
         }
         else
         {
             printf("Unknown single command: %s\n", cmd);
         }
-        Encoder_Reset(&encoder1);
-        Encoder_Reset(&encoder4);
     }
     else if (strlen(cmd) >= 5)
     {
@@ -249,6 +182,7 @@ void parse_command(char *cmd)
         printf("Unknown command format: %s\n", cmd);
     }
 }
+
 // ------------------- 명령 실행 함수 -------------------
 void execute_command(char motor, char dir, int speed)
 {
@@ -259,20 +193,17 @@ void execute_command(char motor, char dir, int speed)
         left_motor.target = duty;
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11,
                           (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-        printf("%ld", Encoder_GetPosition(&encoder1));
     }
     else if (motor == 'r') // Right Motor
     {
         right_motor.target = duty;
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10,
                           (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-        printf("%ld", Encoder_GetPosition(&encoder4));
     }
 
     printf("CMD -> Motor:%c Dir:%c Speed:%d (duty=%d)\n",
            motor, dir, speed, duty);
 }
-
 
 //점진적 모터 속도 제어
 void Transform_PWM(){
@@ -295,6 +226,7 @@ void Stop_Motor(void)
 
   // 필요 시 후속 처리 (예: 방향핀 LOW, 브레이크)
 }
+
 //모터드라이버 브레이크
 void set_brake(bool on) {
     if(on) {
@@ -329,26 +261,18 @@ void TIM4_IRQHandler(void)
 {
     HAL_TIM_IRQHandler(&htim4);
 }
+
 void TIM1_IRQHandler(void)
 {
     HAL_TIM_IRQHandler(&htim1);
 }
-
 // HAL 콜백 함수 (Update Event 등 처리)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if(htim->Instance == TIM3)  // TIM3 = 1ms 주기 타이머
 		{
 	        Transform_PWM();   // 모터 점진 제어
-	}else if(htim->Instance == TIM1 || htim->Instance == TIM4){
-    volatile int32_t *encoder_total = NULL;
 
-    if(htim->Instance == TIM1) encoder_total = &encoder1.total;
-    else if(htim->Instance == TIM4) encoder_total = &encoder4.total;
-    else return;
-
-    if(__HAL_TIM_IS_TIM_COUNTING_DOWN(htim)) *encoder_total -= 0x10000;
-    else *encoder_total += 0x10000;
 	}
 }
 
@@ -362,7 +286,91 @@ int32_t Encoder_GetPosition(Encoder_t *encoder)
 void Encoder_Reset(Encoder_t *encoder)
 {
     __HAL_TIM_SET_COUNTER(encoder->htim, 0);
-    encoder->total = 0;  // 누적값도 같이 리셋해주면 안전함
+    encoder->total_count = 0;  // 누적값도 같이 리셋해주면 안전함
+}
+
+// CRC16-CCITT (0x1021) - 기본 구현
+static uint16_t crc16_ccitt(const uint8_t *data, uint32_t len)
+{
+    uint16_t crc = 0xFFFF; // 또는 0x0000, 시스템에 맞게 선택
+    for (uint32_t i = 0; i < len; ++i) {
+        crc ^= ((uint16_t)data[i]) << 8;
+        for (int j = 0; j < 8; ++j) {
+            if (crc & 0x8000) crc = (crc << 1) ^ 0x1021;
+            else crc <<= 1;
+        }
+    }
+    return crc;
+}
+
+// 안전한 delta 계산 (16-bit timer)
+static int32_t calc_delta_uint16(uint16_t prev, uint16_t curr)
+{
+    int32_t diff = (int32_t)curr - (int32_t)prev;
+    if (diff > 32767) diff -= 65536;
+    else if (diff < -32768) diff += 65536;
+    return diff;
+}
+
+// 패킷 생성 및 전송 (비동기 DMA 사용 예)
+#define PKT_LEN 12
+static uint8_t tx_buf[PKT_LEN];
+
+void send_total_count_via_uart(int64_t total)
+{
+    // Header
+    tx_buf[0] = 0xAA;
+    tx_buf[1] = 0x55;
+
+    // Payload: int64_t little-endian
+    for (int i = 0; i < 8; ++i) {
+        tx_buf[2 + i] = (uint8_t)((total >> (8 * i)) & 0xFF);
+    }
+
+    // CRC over bytes [0..9]
+    uint16_t crc = crc16_ccitt(tx_buf, 10);
+    tx_buf[10] = (uint8_t)(crc & 0xFF);
+    tx_buf[11] = (uint8_t)((crc >> 8) & 0xFF);
+
+    // 그냥 blocking 방식 전송
+    int len = sprintf((char*)tx_buf, "total=%lld\r\n", (long long)total);
+    HAL_UART_Transmit(&huart2, (uint8_t*)tx_buf, len, HAL_MAX_DELAY);
+//    HAL_UART_Transmit(&huart2, tx_buf, PKT_LEN, HAL_MAX_DELAY);
+}
+
+void send_total_count_debug(int32_t revolutions, int32_t remainder) {
+	 printf("Revolutions: %ld, Remainder pulses: %ld\r\n", (long)revolutions, (long)remainder);
+
+}
+
+// 주기적으로(또는 이벤트 기반으로) 호출되는 함수: counter 읽고 누적 및 전송 결정
+void encoder_process_once(Encoder_t *encoder)
+{
+    // 현재 CNT 값 읽기 (16-bit)
+    uint16_t curr = (uint16_t)__HAL_TIM_GET_COUNTER(encoder->htim);;
+
+    // 최초 실행 시 prev 초기화
+    static uint8_t inited = 0;
+    if (!inited) {
+        encoder->prev_cnt = curr;
+        inited = 1;
+        return;
+    }
+
+    // delta 계산
+    int32_t delta = calc_delta_uint16(encoder->prev_cnt, curr);
+    encoder->prev_cnt = curr;
+
+    // 누적
+    encoder->total_count += (int64_t)delta;
+    int32_t revolutions = encoder->total_count / PPR;   // 정수 회전수
+//    double angle_deg = revolutions * 360.0;
+    int32_t remainder = encoder->total_count % PPR;    // 남은 펄스 수
+    // 전송 조건: 예) 값이 바뀔 때만 전송하거나, 주기적으로 전송
+    // 여기서는 값이 바뀔 때 전송
+    if (delta != 0) {
+    	send_total_count_debug(revolutions, revolutions);
+    }
 }
 
 /* USER CODE END 0 */
@@ -413,16 +421,11 @@ int main(void)
   HAL_UART_Receive_IT(&huart2, &rx_data, 1); // UART Receive 1 byte
   HAL_ADC_Start_IT(&hadc1);
   // TIM3 시작 필요
-  HAL_TIM_Base_Start(&htim3);
-
-  // 엔코더 입력을 위한 타이머 입력 캡처 시작
+  HAL_TIM_Base_Start_IT(&htim3); // 인터럽트 모드로 시작
 
   // 초기 PWM 값을 0으로 설정
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
-
-
-
 
   /* USER CODE END 2 */
 
@@ -432,13 +435,7 @@ int main(void)
   {
 
     /* USER CODE END WHILE */
-	  Transform_PWM();
-	  test = (int32_t)__HAL_TIM_GET_COUNTER(encoder1.htim);
-	  if(test >= 32700){
-		  set_brake(true);
-		  __HAL_TIM_SET_COUNTER(encoder1.htim, 0);
-	  }
-//	  HAL_Delay(50);
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -562,7 +559,7 @@ static void MX_TIM1_Init(void)
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -659,9 +656,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 7199;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
+  htim3.Init.Period = 499;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -709,7 +706,7 @@ static void MX_TIM4_Init(void)
   htim4.Init.Period = 65535;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -803,6 +800,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_7;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PB1 PB2 moter_right_dir_Pin moter_left_dir_Pin
