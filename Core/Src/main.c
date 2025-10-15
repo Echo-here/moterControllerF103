@@ -31,7 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define PWM_DUTY_SCALE 4.9f
+#define PWM_DUTY_SCALE 4.9 f
 #define IR_THRESHOLD 4000
 #define PPR 32700
 /* USER CODE END PD */
@@ -323,7 +323,7 @@ void encoder_process_once(Encoder_t *encoder)
     int32_t remainder = encoder->total_count % PPR;    // 남은 펄스 수
     // 전송 조건: 예) 값이 바뀔 때만 전송하거나, 주기적으로 전송
     // 여기서는 값이 바뀔 때 전송
-    	send_total_count_debug(revolutions, revolutions);
+    	send_total_count_debug(revolutions, remainder);
 }
 
 
