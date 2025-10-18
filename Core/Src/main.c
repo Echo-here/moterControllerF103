@@ -31,7 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define PWM_DUTY_SCALE 4.9 f
+#define PWM_DUTY_SCALE 4.9f
 #define IR_THRESHOLD 4000
 #define PPR 32700
 /* USER CODE END PD */
@@ -138,17 +138,13 @@ void parse_command(char *cmd)
     {
         if (cmd[0] == 's')
         {
-            Stop_Motor();
+        	Motor_StopAll();
             printf("Stop command received\n");
         }
         else if (cmd[0] == 'e')
         {
             set_brake(true);
             printf("Brake command received\n");
-        }else if(cmd[0] == 'q'){
-        	printf("encoder command received\n");
-	        encoder_process_once(&encoder1);
-	        encoder_process_once(&encoder4);
         }
         else
         {
@@ -202,7 +198,7 @@ void execute_command(char motor, char dir, int speed)
 }
 
 //점진적 모터 속도 제어
-void Transform_PWM(){
+void Motor_UpdateAllPWM(){
 	Motor_UpdatePWM(&left_motor);
 	Motor_UpdatePWM(&right_motor);
 }
@@ -214,7 +210,7 @@ void Motor_UpdatePWM(Motor_t *motor) {
 }
 
 //점진적 모터 정지
-void Stop_Motor(void)
+void Motor_StopAll(void)
 {
   // 양쪽 모터의 PWM을 0으로 설정하여 정지
 	left_motor.target  = 0;
@@ -240,6 +236,12 @@ void set_brake(bool on) {
     }
 }
 
+void send_total_count() {
+	 printf("%ld, %ld\n", encoder1.total_count, encoder4.total_count);
+
+}
+
+
 //적외선 센서 감지 인터럽트
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
@@ -247,10 +249,11 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
     {
         uint32_t adc_value = HAL_ADC_GetValue(hadc);
         if(adc_value < IR_THRESHOLD){
-        	Stop_Motor();
+        	Motor_StopAll();
         }
     }
 }
+
 void stack_encoder(Encoder_t *encoder){
 	 uint16_t curr_cnt = (uint16_t)__HAL_TIM_GET_COUNTER(encoder->htim);
 
@@ -260,7 +263,9 @@ void stack_encoder(Encoder_t *encoder){
 	 // 무한 누적
 	 encoder->total_count += delta;
 
+
 }
+
 
 // TIM4,1 인터럽트 핸들러
 void TIM4_IRQHandler(void)
@@ -277,55 +282,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if(htim->Instance == TIM3)  // TIM3 = 1ms 주기 타이머
 		{
-	        Transform_PWM();   // 모터 점진 제어
+			Motor_UpdateAllPWM();   // 모터 점진 제어
 	        stack_encoder(&encoder1);
 	        stack_encoder(&encoder4);
+	        send_total_count();
 	}
 }
-
-// 패킷 생성 및 전송 (비동기 DMA 사용 예)
-#define PKT_LEN 12
-static uint8_t tx_buf[PKT_LEN];
-
-void send_total_count_via_uart(int64_t total)
-{
-    // Header
-    tx_buf[0] = 0xAA;
-    tx_buf[1] = 0x55;
-
-    // Payload: int64_t little-endian
-    for (int i = 0; i < 8; ++i) {
-        tx_buf[2 + i] = (uint8_t)((total >> (8 * i)) & 0xFF);
-    }
-
-    // CRC over bytes [0..9]
-//    uint16_t crc = crc16_ccitt(tx_buf, 10);
-//    tx_buf[10] = (uint8_t)(crc & 0xFF);
-//    tx_buf[11] = (uint8_t)((crc >> 8) & 0xFF);
-
-    // 그냥 blocking 방식 전송
-    int len = sprintf((char*)tx_buf, "total=%lld\r\n", (long long)total);
-    HAL_UART_Transmit(&huart2, (uint8_t*)tx_buf, len, HAL_MAX_DELAY);
-//    HAL_UART_Transmit(&huart2, tx_buf, PKT_LEN, HAL_MAX_DELAY);
-}
-
-void send_total_count_debug(int32_t revolutions, int32_t remainder) {
-	 printf("Revolutions: %ld, Remainder pulses: %ld\r\n", (long)revolutions, (long)remainder);
-
-}
-
-// 주기적으로(또는 이벤트 기반으로) 호출되는 함수: counter 읽고 누적 및 전송 결정
-void encoder_process_once(Encoder_t *encoder)
-{
-
-    int32_t revolutions = encoder->total_count / PPR;   // 정수 회전수
-//    double angle_deg = revolutions * 360.0;
-    int32_t remainder = encoder->total_count % PPR;    // 남은 펄스 수
-    // 전송 조건: 예) 값이 바뀔 때만 전송하거나, 주기적으로 전송
-    // 여기서는 값이 바뀔 때 전송
-    	send_total_count_debug(revolutions, remainder);
-}
-
 
 
 

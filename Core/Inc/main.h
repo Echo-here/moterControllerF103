@@ -42,7 +42,7 @@ extern "C" {
 typedef struct {
     TIM_HandleTypeDef *htim;
     uint16_t prev_cnt;
-    int64_t total_count;
+    uint32_t total_count;
 } Encoder_t;
 
 //모터 구조
