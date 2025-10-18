@@ -1,4 +1,4 @@
-Core/Src/uart.o: ../Core/Src/uart.c ../Core/Inc/uart.h \
+Core/Src/encoder.o: ../Core/Src/encoder.c ../Core/Inc/encoder.h \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h \
  ../Core/Inc/stm32f1xx_hal_conf.h \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc.h \
@@ -25,9 +25,8 @@ Core/Src/uart.o: ../Core/Src/uart.c ../Core/Inc/uart.h \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr.h \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h \
- ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h \
- ../Core/Inc/motor.h ../Core/Inc/encoder.h ../Core/Inc/motor.h
-../Core/Inc/uart.h:
+ ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
+../Core/Inc/encoder.h:
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h:
 ../Core/Inc/stm32f1xx_hal_conf.h:
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc.h:
@@ -55,6 +54,3 @@ Core/Src/uart.o: ../Core/Src/uart.c ../Core/Inc/uart.h \
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h:
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h:
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h:
-../Core/Inc/motor.h:
-../Core/Inc/encoder.h:
-../Core/Inc/motor.h:

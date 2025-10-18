@@ -1,0 +1,2 @@
+../Core/Src/encoder.c:6:6:Encoder_SendTotalCount	8	static
+../Core/Src/encoder.c:11:6:Encoder_Update	24	static

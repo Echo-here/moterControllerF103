@@ -31,7 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define PWM_DUTY_SCALE 4.9f
+
 #define IR_THRESHOLD 4000
 #define PPR 32700
 /* USER CODE END PD */
@@ -49,37 +49,12 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
-UART_HandleTypeDef huart2;
+
 
 /* USER CODE BEGIN PV */
-uint8_t rx_buffer[20]; // UART 수신 데이터를 임시 저장할 버퍼
-uint8_t rx_index = 0;    // 수신 버퍼의 현재 위치
-uint8_t rx_data;         // UART로 수신한 1바이트 데이터
 
-Encoder_t encoder1 = { .htim = &htim1, .prev_cnt = 0, .total_count = 0 };
-Encoder_t encoder4 = { .htim = &htim4, .prev_cnt = 0, .total_count = 0 };
 
-Motor_t left_motor = {
-    .htim = &htim2,
-    .channel = TIM_CHANNEL_1,
-    .dir_port = GPIOB,
-    .dir_pin = GPIO_PIN_11,
-    .brk_port = GPIOB,
-    .brk_pin = GPIO_PIN_1,
-    .target = 0,
-    .current = 0
-};
 
-Motor_t right_motor = {
-    .htim = &htim2,
-    .channel = TIM_CHANNEL_2,
-    .dir_port = GPIOB,
-    .dir_pin = GPIO_PIN_10,
-    .brk_port = GPIOB,
-    .brk_pin = GPIO_PIN_2,
-    .target = 0,
-    .current = 0
-};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -107,140 +82,6 @@ int __io_putchar(int ch) {
     return ch;
 }
 
-// ------------------- UART 콜백 -------------------
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if (huart->Instance == USART2)
-    {
-
-        if (rx_data == '\n' || rx_data == '\r')
-        {
-            rx_buffer[rx_index] = '\0';
-
-            parse_command((char*)rx_buffer);   // 파싱 전담 함수 호출
-            rx_index = 0;
-            memset(rx_buffer, 0, sizeof(rx_buffer));
-        }
-        else
-        {
-            if (rx_index < sizeof(rx_buffer) - 1)
-                rx_buffer[rx_index++] = rx_data;
-        }
-
-        HAL_UART_Receive_IT(&huart2, &rx_data, 1);
-    }
-}
-
-// ------------------- 명령 파싱 함수 -------------------
-void parse_command(char *cmd)
-{
-    if (strlen(cmd) == 1)
-    {
-        if (cmd[0] == 's')
-        {
-        	Motor_StopAll();
-            printf("Stop command received\n");
-        }
-        else if (cmd[0] == 'e')
-        {
-            set_brake(true);
-            printf("Brake command received\n");
-        }
-        else
-        {
-            printf("Unknown single command: %s\n", cmd);
-        }
-    }
-    else if (strlen(cmd) >= 5)
-    {
-        char motor = cmd[0];   // 'l' or 'r'
-        char dir   = cmd[2];   // 'f' or 'b'
-        int  speed = atoi(&cmd[4]);
-
-        if ((motor == 'l' || motor == 'r') &&
-            (dir == 'f' || dir == 'b') &&
-            (speed >= 0 && speed <= 9))
-        {
-            set_brake(false);
-            execute_command(motor, dir, speed);
-        }
-        else
-        {
-            printf("Invalid command: %s\n", cmd);
-        }
-    }
-    else
-    {
-        printf("Unknown command format: %s\n", cmd);
-    }
-}
-
-// ------------------- 명령 실행 함수 -------------------
-void execute_command(char motor, char dir, int speed)
-{
-    uint16_t duty = speed * PWM_DUTY_SCALE;
-
-    if (motor == 'l')  // Left Motor
-    {
-        left_motor.target = duty;
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11,
-                          (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-    }
-    else if (motor == 'r') // Right Motor
-    {
-        right_motor.target = duty;
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10,
-                          (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-    }
-
-    printf("CMD -> Motor:%c Dir:%c Speed:%d (duty=%d)\n",
-           motor, dir, speed, duty);
-}
-
-//점진적 모터 속도 제어
-void Motor_UpdateAllPWM(){
-	Motor_UpdatePWM(&left_motor);
-	Motor_UpdatePWM(&right_motor);
-}
-
-void Motor_UpdatePWM(Motor_t *motor) {
-    if (motor->current < motor->target) motor->current++;
-    else if (motor->current > motor->target) motor->current--;
-    __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, motor->current);
-}
-
-//점진적 모터 정지
-void Motor_StopAll(void)
-{
-  // 양쪽 모터의 PWM을 0으로 설정하여 정지
-	left_motor.target  = 0;
-	right_motor.target = 0;
-
-  // 필요 시 후속 처리 (예: 방향핀 LOW, 브레이크)
-}
-
-//모터드라이버 브레이크
-void set_brake(bool on) {
-    if(on) {
-    	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-    	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
-    	left_motor.target = 0;
-    	right_motor.target = 0;
-    	left_motor.current = 0;
-    	right_motor.current = 0;
-
-    }
-    else {
-    	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
-    	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_RESET);
-    }
-}
-
-void send_total_count() {
-	 printf("%ld, %ld\n", encoder1.total_count, encoder4.total_count);
-
-}
-
 
 //적외선 센서 감지 인터럽트
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
@@ -253,19 +94,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
         }
     }
 }
-
-void stack_encoder(Encoder_t *encoder){
-	 uint16_t curr_cnt = (uint16_t)__HAL_TIM_GET_COUNTER(encoder->htim);
-
-	 // 16비트 카운터 wrap 처리
-	 int32_t delta = (int32_t)((int16_t)(curr_cnt - encoder->prev_cnt));
-	 encoder->prev_cnt = curr_cnt;
-	 // 무한 누적
-	 encoder->total_count += delta;
-
-
-}
-
 
 // TIM4,1 인터럽트 핸들러
 void TIM4_IRQHandler(void)
@@ -283,9 +111,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim->Instance == TIM3)  // TIM3 = 1ms 주기 타이머
 		{
 			Motor_UpdateAllPWM();   // 모터 점진 제어
-	        stack_encoder(&encoder1);
-	        stack_encoder(&encoder4);
-	        send_total_count();
+			Encoder_Update(&encoder1);
+	        Encoder_Update(&encoder4);
+	        Encoder_SendTotalCount();
 	}
 }
 

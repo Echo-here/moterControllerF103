@@ -1,0 +1,4 @@
+../Core/Src/motor.c:28:6:Motor_UpdateAllPWM	8	static
+../Core/Src/motor.c:33:6:Motor_UpdatePWM	16	static
+../Core/Src/motor.c:40:6:Motor_StopAll	4	static
+../Core/Src/motor.c:50:6:Motor_SetBrake	16	static
