@@ -35,10 +35,6 @@ extern "C" {
 #include <string.h>
 #include <stdlib.h>     // atoi 함수 선언
 #include <stdbool.h>
-
-#include "motor.h"
-#include "encoder.h"
-#include "uart.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

@@ -18,7 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
+#include "motor.h"
+#include "encoder.h"
+#include "uart.h"
+#include "uart_printf.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -71,16 +74,6 @@ static void MX_TIM1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-//printf로 uart 출력
-int __io_putchar(int ch) {
-    HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, 1000);
-    if (ch == '\n') {
-        uint8_t cr = '\r';
-        HAL_UART_Transmit(&huart2, &cr, 1, 1000);
-    }
-    return ch;
-}
 
 
 //적외선 센서 감지 인터럽트

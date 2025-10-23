@@ -1,6 +1,7 @@
 #include "uart.h"
 #include "motor.h"
 
+
 #define PWM_DUTY_SCALE 4.9f
 
 uint8_t rx_buffer[20]; // UART 수신 데이터를 임시 저장할 버퍼

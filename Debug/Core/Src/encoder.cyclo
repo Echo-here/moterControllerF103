@@ -1,2 +1,2 @@
-../Core/Src/encoder.c:6:6:Encoder_SendTotalCount	1
-../Core/Src/encoder.c:11:6:Encoder_Update	1
+../Core/Src/encoder.c:7:6:Encoder_SendTotalCount	1
+../Core/Src/encoder.c:12:6:Encoder_Update	1

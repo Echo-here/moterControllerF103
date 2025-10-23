@@ -1,4 +1,5 @@
 #include "encoder.h"
+#include "uart_printf.h"
 
 Encoder_t encoder1 = { .htim = &htim1, .prev_cnt = 0, .total_count = 0 };
 Encoder_t encoder4 = { .htim = &htim4, .prev_cnt = 0, .total_count = 0 };
