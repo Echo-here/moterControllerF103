@@ -55,16 +55,19 @@ void parse_command(char *cmd)
     }
     else if (strlen(cmd) >= 5)
     {
-        char motor = cmd[0];   // 'l' or 'r'
-        char dir   = cmd[2];   // 'f' or 'b'
-        int  speed = atoi(&cmd[4]);
 
-        if ((motor == 'l' || motor == 'r') &&
-            (dir == 'f' || dir == 'b') &&
-            (speed >= 0 && speed <= 9))
+        char left_dir   = cmd[0];
+		int  left_speed = atoi(&cmd[2]);
+        char right_dir   = cmd[4];
+        int  right_speed = atoi(&cmd[6]);
+
+        if ((left_dir == 'f' || left_dir == 'b') &&
+            (right_dir == 'f' || right_dir == 'b') &&
+            (left_speed >= 0 && left_speed <= 9)&&
+			(right_speed >= 0 && right_speed <= 9))
         {
         	Motor_SetBrake(false);
-            execute_command(motor, dir, speed);
+            execute_command(left_dir, left_speed, right_dir, right_speed);
         }
         else
         {
@@ -78,23 +81,19 @@ void parse_command(char *cmd)
 }
 
 // ------------------- 명령 실행 함수 -------------------
-void execute_command(char motor, char dir, int speed)
+void execute_command(char left_dir, int left_speed, char right_dir, int right_speed)
 {
-    uint16_t duty = speed * PWM_DUTY_SCALE;
+    uint16_t left_duty = left_speed * PWM_DUTY_SCALE;
+	uint16_t right_duty = right_speed * PWM_DUTY_SCALE;
 
-    if (motor == 'l')  // Left Motor
-    {
-        left_motor.target = duty;
-        HAL_GPIO_WritePin(left_motor.dir_port, left_motor.dir_pin,
-                          (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-    }
-    else if (motor == 'r') // Right Motor
-    {
-        right_motor.target = duty;
-        HAL_GPIO_WritePin(right_motor.dir_port, right_motor.dir_pin,
-                          (dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
-    }
+    left_motor.target = left_duty;
+    HAL_GPIO_WritePin(left_motor.dir_port, left_motor.dir_pin,
+                          (left_dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
 
-    printf("CMD -> Motor:%c Dir:%c Speed:%d (duty=%d)\n",
-           motor, dir, speed, duty);
+    right_motor.target = right_duty;
+    HAL_GPIO_WritePin(right_motor.dir_port, right_motor.dir_pin,
+                          (right_dir == 'f') ? GPIO_PIN_RESET : GPIO_PIN_SET);
+
+    printf("CMD -> Left_Motor: Dir:%c Speed:%d (duty=%d)\n CMD -> Right_Motor: Dir:%c Speed:%d (duty=%d)\n",
+           left_dir, left_speed, left_duty, right_dir, right_speed, right_duty);
 }
