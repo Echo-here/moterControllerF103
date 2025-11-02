@@ -15,6 +15,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 void parse_command(char *cmd);
 
 // ------------------- 명령 실행 함수 -------------------
-void execute_command(char motor, char dir, int speed);
+void execute_command(char left_dir, int left_speed, char right_dir, int right_speed);
 
 #endif
